@@ -99,7 +99,7 @@ graph TD
     G --> C;
     F -- Ya --> H["Sistem Mencari Tiketdi Database"];
     H --> I{Tiket Tersedia?};
-    I -- Tidak --> J[Tampilkan Pesan "Tiket Tidak Ditemukan"];
+    I -- Tidak --> J[Tampilkan Pesan Tiket Tidak Ditemukan];
     J --> K[Selesai];
     I -- Ya --> L["Tampilkan Daftar Tiketyang Sesuai"];
     L --> M{Pilih Salah Satu Tiket};
