@@ -373,3 +373,240 @@ graph TD
 10. **Selesai**: Alur login berhasil.
 
 --- 
+
+## 3. Sequence Diagram
+
+Sequence diagram memberikan gambaran yang lebih detail tentang bagaimana objek dan komponen berinteraksi satu sama lain dalam urutan waktu untuk menyelesaikan sebuah *use case*.
+
+### 3.1. Sekuens: Mencari dan Melihat Detail Tiket
+
+Diagram ini menunjukkan alur interaksi saat pengguna mencari tiket hingga melihat detailnya.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pengguna
+    participant Frontend
+    participant Backend
+    participant Database
+
+    Pengguna->>Frontend: Mengakses halaman utama
+    Frontend->>Backend: GET /home
+    Backend->>Frontend: Tampilkan halaman dengan form pencarian
+    Pengguna->>Frontend: Mengisi form pencarian & klik "Cari"
+    Frontend->>Backend: POST /search (kriteria)
+    Backend->>Backend: Validasi kriteria pencarian
+    
+    alt Kriteria tidak valid
+        Backend->>Frontend: Response(error: "Input tidak valid")
+        Frontend->>Pengguna: Tampilkan pesan error
+    else Kriteria valid
+        Backend->>Database: SELECT * FROM Tiket WHERE ...
+        Database->>Backend: Hasil pencarian tiket
+        
+        alt Tiket tidak ditemukan
+            Backend->>Frontend: Response(info: "Tiket tidak ditemukan")
+            Frontend->>Pengguna: Tampilkan pesan info
+        else Tiket ditemukan
+            Backend->>Frontend: Response(data: Daftar Tiket)
+            Frontend->>Pengguna: Tampilkan daftar tiket
+            
+            Pengguna->>Frontend: Memilih satu tiket
+            Frontend->>Backend: GET /tiket/{id}
+            Backend->>Database: SELECT * FROM Tiket WHERE id={id}
+            Database->>Backend: Detail tiket
+            Backend->>Frontend: Response(data: Detail Tiket)
+            Frontend->>Pengguna: Tampilkan halaman detail tiket
+        end
+    end
+```
+
+### 3.2. Sekuens: Memesan Tiket
+
+Diagram ini menjelaskan proses pemesanan setelah pengguna memilih tiket, dengan asumsi pengguna perlu login.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pengguna
+    participant Frontend
+    participant Backend
+    participant Database
+
+    Pengguna->>Frontend: Klik tombol "Pesan Tiket"
+    Frontend->>Backend: POST /bookings (ticket_id)
+    Backend->>Backend: Cek status sesi login
+    
+    alt Pengguna belum login
+        Backend->>Frontend: Redirect ke halaman Login
+        note right of Pengguna: Proses login/registrasi terjadi di sini.
+        Frontend->>Backend: (Setelah login berhasil) Ulangi POST /bookings
+    end
+    
+    Backend->>Frontend: Tampilkan form data pemesan & penumpang
+    Pengguna->>Frontend: Mengisi data & klik "Konfirmasi Pesanan"
+    Frontend->>Backend: POST /bookings/confirm (booking_data)
+    Backend->>Backend: Validasi data penumpang
+    
+    alt Data tidak valid
+        Backend->>Frontend: Response(error: "Data tidak lengkap")
+        Frontend->>Pengguna: Tampilkan error & tandai field yang salah
+    else Data valid
+        Backend->>Database: INSERT INTO Pesanan (status: 'menunggu pembayaran')
+        Database->>Backend: Response(booking_code, order_id)
+        Backend->>Database: UPDATE Stok Tiket (hold)
+        Backend->>Frontend: Response(Halaman konfirmasi pesanan)
+        Frontend->>Pengguna: Tampilkan ringkasan pesanan & total bayar
+        Pengguna->>Frontend: Klik "Lanjut ke Pembayaran"
+        Frontend->>Backend: GET /payment/{order_id}
+        Backend->>Frontend: Redirect ke halaman pilih metode pembayaran
+    end
+```
+
+### 3.3. Sekuens: Melakukan Pembayaran dan Menerima E-Tiket
+
+Diagram ini menggambarkan alur pembayaran yang melibatkan pihak eksternal (Gateway Pembayaran).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pengguna
+    participant Frontend
+    participant Backend
+    participant "Gateway Pembayaran"
+    participant Database
+    participant "Mail Server"
+
+    Pengguna->>Frontend: Pilih metode pembayaran
+    Frontend->>Backend: POST /payment/{order_id} (payment_method)
+    Backend->>"Gateway Pembayaran": Create Payment Request(order_id, amount)
+    "Gateway Pembayaran"->>Backend: Response(payment_url / va_number)
+    Backend->>Frontend: Redirect ke halaman Gateway
+    Frontend->>Pengguna: Tampilkan halaman pembayaran Gateway
+    Pengguna->>"Gateway Pembayaran": Menyelesaikan pembayaran (misal: transfer)
+    
+    "Gateway Pembayaran"->>Backend: Webhook Notification (status: 'success')
+    
+    Backend->>Backend: Validasi notifikasi
+    Backend->>Database: UPDATE Pesanan SET status = 'lunas'
+    Backend->>Backend: Generate E-Tiket (PDF)
+    Backend->>"Mail Server": Kirim E-Tiket ke email pengguna
+    "Mail Server"->>Pengguna: E-Tiket diterima di email
+    
+    loop Polling status
+        Frontend->>Backend: GET /payment/status/{order_id}
+        Backend->>Frontend: Response(status: 'lunas')
+    end
+    
+    Frontend->>Pengguna: Tampilkan halaman "Pembayaran Berhasil" & link unduh e-tiket
+```
+
+### 3.4. Sekuens: Mengelola Pesanan
+
+Diagram ini menunjukkan bagaimana pengguna melihat riwayat pesanan dan mengajukan pembatalan.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pengguna
+    participant Frontend
+    participant Backend
+    participant Database
+
+    Pengguna->>Frontend: Mengakses halaman "Pesanan Saya"
+    Frontend->>Backend: GET /my-orders
+    Backend->>Database: SELECT * FROM Pesanan WHERE user_id = ...
+    Database->>Backend: Daftar pesanan
+    Backend->>Frontend: Response(data: Daftar riwayat pesanan)
+    Frontend->>Pengguna: Tampilkan daftar pesanan
+
+    Pengguna->>Frontend: Memilih satu pesanan untuk dilihat detailnya
+    Frontend->>Backend: GET /orders/{order_id}
+    Backend->>Database: SELECT * FROM Pesanan WHERE id = {order_id}
+    Database->>Backend: Detail pesanan
+    Backend->>Frontend: Response(data: Detail pesanan)
+    Frontend->>Pengguna: Tampilkan detail pesanan beserta opsi
+
+    alt Aksi: Ajukan Pembatalan
+        Pengguna->>Frontend: Klik tombol "Ajukan Pembatalan"
+        Frontend->>Backend: POST /orders/{order_id}/cancel
+        Backend->>Backend: Cek kebijakan pembatalan
+        
+        alt Tidak dapat dibatalkan
+            Backend->>Frontend: Response(error: "Pesanan tidak bisa dibatalkan")
+            Frontend->>Pengguna: Tampilkan pesan error
+        else Dapat dibatalkan
+            Backend->>Frontend: Response(info: "S&K Pembatalan")
+            Frontend->>Pengguna: Tampilkan S&K dan minta konfirmasi
+            Pengguna->>Frontend: Setuju dengan S&K pembatalan
+            Frontend->>Backend: POST /orders/{order_id}/cancel/confirm
+            Backend->>Database: UPDATE Pesanan SET status = 'menunggu refund'
+            Backend->>Frontend: Response(success: "Permintaan pembatalan terkirim")
+            Frontend->>Pengguna: Tampilkan pesan konfirmasi
+        end
+    end
+```
+
+### 3.5. Sekuens: Mendaftar Akun dan Login
+
+Diagram ini memecah alur untuk registrasi pengguna baru dan proses login.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pengguna
+    participant Frontend
+    participant Backend
+    participant Database
+    participant "Mail Server"
+
+    rect rgb(240, 248, 255)
+    note over Pengguna, Backend: Alur Pendaftaran Akun
+    Pengguna->>Frontend: Memilih opsi 'Daftar'
+    Frontend->>Pengguna: Tampilkan form pendaftaran
+    Pengguna->>Frontend: Mengisi form & kirim
+    Frontend->>Backend: POST /register (user_data)
+    Backend->>Backend: Validasi data & cek keunikan email
+    Backend->>Database: SELECT 1 FROM Pengguna WHERE email = ?
+    
+    alt Email sudah ada atau data tidak valid
+        Database->>Backend: (hasil)
+        Backend->>Frontend: Response(error: "Email sudah terdaftar/Data tidak valid")
+        Frontend->>Pengguna: Tampilkan pesan error
+    else Data valid & email unik
+        Database->>Backend: (kosong)
+        Backend->>Database: INSERT INTO Pengguna (..., status='belum verifikasi')
+        Backend->>"Mail Server": Request kirim email verifikasi
+        "Mail Server"->>Pengguna: Kirim email dengan link verifikasi
+        Backend->>Frontend: Response(success: "Pendaftaran berhasil, cek email")
+        Frontend->>Pengguna: Tampilkan pesan sukses
+    end
+    end
+    
+    rect rgb(255, 250, 240)
+    note over Pengguna, Backend: Alur Login
+    Pengguna->>Frontend: Memilih opsi 'Login'
+    Frontend->>Pengguna: Tampilkan form login
+    Pengguna->>Frontend: Mengisi email & password, lalu kirim
+    Frontend->>Backend: POST /login (credentials)
+    Backend->>Database: SELECT * FROM Pengguna WHERE email = ?
+    Database->>Backend: Data Pengguna (termasuk hashed password)
+
+    alt Kredensial salah / pengguna tidak ada
+        Backend->>Frontend: Response(error: "Email atau password salah")
+        Frontend->>Pengguna: Tampilkan pesan error
+    else Kredensial benar
+        Backend->>Backend: Verifikasi status akun
+        alt Akun belum terverifikasi
+            Backend->>Frontend: Response(error: "Akun belum aktif, cek email")
+            Frontend->>Pengguna: Tampilkan pesan error
+        else Akun sudah aktif
+            Backend->>Backend: Buat Sesi Login / JWT Token
+            Backend->>Frontend: Response(success, auth_token)
+            Frontend->>Pengguna: Redirect ke halaman utama (login berhasil)
+        end
+    end
+    end
+```
+
+--- 
